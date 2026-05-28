@@ -1,98 +1,41 @@
-// Linq Blue V3 Webhook Types
-// Ref: https://apidocs.linqapp.com/webhook-events
+// Sendblue Webhook Types
+// Docs: https://docs.sendblue.com/#tag/Webhooks
 
-export interface WebhookEvent {
-  api_version: 'v3';
-  event_id: string;
-  created_at: string;
-  trace_id: string;
-  partner_id: string;
-  event_type: string;
-  data: unknown;
+export interface SendblueWebhookBody {
+  accountEmail?:    string;
+  content?:         string;
+  is_outbound:      boolean;
+  status?:          string;
+  error_code?:      string | null;
+  error_message?:   string | null;
+  message_handle?:  string;
+  date_sent?:       string;
+  date_updated?:    string;
+  from_number:      string;
+  number?:          string;
+  to_number?:       string;
+  sendblue_number?: string;
+  media_url?:       string;
+  message_type?:    string;
+  group_id?:        string;
+  participants?:    string[];
+  send_style?:      string;
+  opted_out?:       boolean;
 }
 
-export interface MessageReceivedEvent extends WebhookEvent {
-  event_type: 'message.received';
-  data: MessageReceivedData;
+export interface ParsedInbound {
+  from:      string;
+  to:        string;
+  text:      string;
+  mediaUrl:  string | null;
 }
 
-export interface MessageReceivedData {
-  chat_id: string;
-  from: string;
-  recipient_phone: string;
-  received_at: string;
-  is_from_me: boolean;
-  service: 'iMessage' | 'SMS' | 'RCS';
-  message: IncomingMessage;
-}
-
-export interface IncomingMessage {
-  id: string;
-  parts: MessagePart[];
-  effect?: MessageEffect;
-  reply_to?: ReplyTo;
-}
-
-export interface TextPart {
-  type: 'text';
-  value: string;
-}
-
-export interface MediaPart {
-  type: 'media';
-  url?: string;
-  attachment_id?: string;
-  filename?: string;
-  mime_type?: string;
-  size?: number;
-}
-
-export type MessagePart = TextPart | MediaPart;
-
-export interface MessageEffect {
-  type: 'screen' | 'bubble';
-  name: string;
-}
-
-export interface ReplyTo {
-  message_id: string;
-  part_index?: number;
-}
-
-export function isMessageReceivedEvent(event: WebhookEvent): event is MessageReceivedEvent {
-  return event.event_type === 'message.received';
-}
-
-export function extractTextContent(parts: MessagePart[]): string {
-  return parts
-    .filter((part): part is TextPart => part.type === 'text')
-    .map(part => part.value)
-    .join('\n');
-}
-
-export interface ExtractedMedia {
-  url: string;
-  mimeType: string;
-}
-
-export function extractImageUrls(parts: MessagePart[]): ExtractedMedia[] {
-  return parts
-    .filter((part): part is MediaPart =>
-      part.type === 'media' &&
-      !!part.url &&
-      !!part.mime_type &&
-      part.mime_type.startsWith('image/')
-    )
-    .map(part => ({ url: part.url!, mimeType: part.mime_type! }));
-}
-
-export function extractAudioUrls(parts: MessagePart[]): ExtractedMedia[] {
-  return parts
-    .filter((part): part is MediaPart =>
-      part.type === 'media' &&
-      !!part.url &&
-      !!part.mime_type &&
-      part.mime_type.startsWith('audio/')
-    )
-    .map(part => ({ url: part.url!, mimeType: part.mime_type! }));
+export function parseSendblueWebhook(body: SendblueWebhookBody): ParsedInbound & { isOutbound: boolean } {
+  return {
+    from:       (body.from_number   || '').trim(),
+    to:         (body.to_number     || body.sendblue_number || '').trim(),
+    text:       (body.content       || '').trim(),
+    mediaUrl:   body.media_url && body.media_url !== '' ? body.media_url : null,
+    isOutbound: body.is_outbound === true,
+  };
 }

@@ -1,23 +1,23 @@
 {
-  "name": "linq-blue-agent-example",
+  "name": "ai-agent-example-tk",
   "version": "1.0.0",
-  "description": "Example AI agent built on Linq Messaging API - showcases Claude AI integration with iMessage, web search, image generation, and more",
+  "description": "AI SMS/iMessage agent — Sendblue + Claude + Pinecone knowledge base",
   "main": "dist/index.js",
-  "author": "Linq Technologies Incorporated",
+  "author": "tkuehler",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/linq-team/ai-agent-example.git"
+    "url": "https://github.com/tkuehler/ai-agent-example-tk.git"
   },
   "keywords": [
-    "linq",
-    "linq-blue",
+    "sendblue",
     "imessage",
+    "sms",
     "claude",
     "anthropic",
+    "pinecone",
     "ai",
     "chatbot",
-    "sms",
     "messaging",
     "api",
     "example",
@@ -32,6 +32,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@aws-sdk/client-dynamodb": "^3.971.0",
     "@aws-sdk/lib-dynamodb": "^3.971.0",
+    "@pinecone-database/pinecone": "^3.0.3",
     "dotenv": "^17.2.3",
     "express": "^4.21.0",
     "openai": "^6.16.0"
