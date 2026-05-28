@@ -103,9 +103,51 @@ export async function deleteFile(tenantId: string, fileId: string): Promise<void
   console.log(`[pinecone] Deleted file ${fileId} for tenant ${tenantId}`);
 }
 
-// Returns the assistant's grounded answer to use as RAG context for Claude.
+export interface KnowledgeBaseResult {
+  context: string;
+  citation: string | null; // e.g. "📎 return-policy.pdf (p.3)"
+}
+
+interface PineconeReference {
+  file?: { name?: string };
+  pages?: number[];
+}
+
+interface PineconeCitation {
+  references?: PineconeReference[];
+}
+
+function buildCitationLabel(citations: PineconeCitation[]): string | null {
+  if (!citations?.length) return null;
+
+  // Collect unique pages per filename across all citations
+  const filePages = new Map<string, Set<number>>();
+  for (const citation of citations) {
+    for (const ref of citation.references ?? []) {
+      const name = ref.file?.name;
+      if (!name) continue;
+      if (!filePages.has(name)) filePages.set(name, new Set());
+      for (const p of ref.pages ?? []) filePages.get(name)!.add(p);
+    }
+  }
+
+  if (filePages.size === 0) return null;
+
+  const lines = Array.from(filePages.entries()).map(([name, pages]) => {
+    if (pages.size === 0) return `📎 ${name}`;
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const pageStr = sorted.length === 1
+      ? `p.${sorted[0]}`
+      : `pp.${sorted[0]}-${sorted[sorted.length - 1]}`;
+    return `📎 ${name} (${pageStr})`;
+  });
+
+  return lines.join('\n');
+}
+
+// Returns the assistant's grounded answer plus a formatted citation label.
 // Returns null if no knowledge base exists or the query fails.
-export async function queryKnowledgeBase(tenantId: string, question: string): Promise<string | null> {
+export async function queryKnowledgeBase(tenantId: string, question: string): Promise<KnowledgeBaseResult | null> {
   if (!process.env.PINECONE_API_KEY) return null;
 
   const name = toAssistantName(tenantId);
@@ -116,13 +158,14 @@ export async function queryKnowledgeBase(tenantId: string, question: string): Pr
       stream: false,
     });
 
-    const content = result?.message?.content;
-    if (!content) return null;
+    const context = result?.message?.content as string | undefined;
+    if (!context) return null;
 
-    console.log(`[pinecone] Knowledge base context retrieved for tenant ${tenantId}`);
-    return content as string;
+    const citation = buildCitationLabel(result?.citations ?? []);
+    console.log(`[pinecone] KB context retrieved for tenant ${tenantId}${citation ? ` — ${citation}` : ''}`);
+    return { context, citation };
   } catch (error) {
-    // Silently skip — assistant may not exist yet or have no relevant files
+    // Silently skip — assistant may not exist yet or has no relevant files
     console.log(`[pinecone] No KB context for tenant ${tenantId}:`, (error as Error).message);
     return null;
   }

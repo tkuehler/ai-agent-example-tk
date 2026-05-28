@@ -129,7 +129,9 @@ app.post(
       console.log(`[main] Sharing contact card (message #${count})`);
       parallelTasks.push(shareContactCard(chatId));
     }
-    const [, , chatInfo, senderProfile, ragContext] = await Promise.all(parallelTasks) as [void, void, Awaited<ReturnType<typeof getChat>>, Awaited<ReturnType<typeof getUserProfile>>, string | null];
+    const [, , chatInfo, senderProfile, kbResult] = await Promise.all(parallelTasks) as [void, void, Awaited<ReturnType<typeof getChat>>, Awaited<ReturnType<typeof getUserProfile>>, Awaited<ReturnType<typeof queryKnowledgeBase>>];
+    const ragContext = kbResult?.context ?? undefined;
+    const ragCitation = kbResult?.citation ?? null;
     console.log(`[timing] markAsRead+startTyping+getChat+getProfile${shouldShareContact ? '+shareContact' : ''}: ${Date.now() - start}ms`);
     if (senderProfile?.name) {
       console.log(`[main] Known user: ${senderProfile.name} (${senderProfile.facts.length} facts)`);
@@ -230,6 +232,9 @@ app.post(
       // Split into multiple messages first, then clean each one
       // (must split before cleaning, or the --- delimiter gets mangled)
       const messages = finalText ? finalText.split('---').map(m => cleanResponse(m)).filter(m => m.length > 0) : [];
+
+      // Append citation as a final bubble if the KB was used
+      if (ragCitation) messages.push(ragCitation);
 
       // If the incoming message was a reply, continue the thread by replying to that message
       const replyTo = incomingReplyTo ? { message_id: messageId } : undefined;
