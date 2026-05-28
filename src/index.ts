@@ -1,9 +1,14 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { createWebhookHandler } from './webhook/handler.js';
 import { sendMessage, markAsRead, startTyping, sendReaction, shareContactCard, getChat, renameGroupChat, setGroupChatIcon, removeParticipant } from './linq/client.js';
 import { chat, getGroupChatAction, getTextForEffect, generateImage } from './claude/client.js';
 import { getUserProfile, addMessage } from './state/conversation.js';
+import { uploadFile, listFiles, deleteFile, getOrCreateAssistant, queryKnowledgeBase } from './rag/pinecone.js';
+
+// Tenant ID for this deployment — one bot number = one tenant knowledge base
+const TENANT_ID = process.env.LINQ_AGENT_BOT_NUMBERS?.split(',')[0]?.trim() ?? 'default';
 
 // Clean up LLM response formatting quirks before sending
 function cleanResponse(text: string): string {
@@ -33,6 +38,66 @@ const PORT = process.env.PORT || 3000;
 // Parse JSON bodies
 app.use(express.json());
 
+// ── Knowledge base management endpoints ───────────────────────────────────────
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+function requireKnowledgeApiKey(req: Request, res: Response, next: NextFunction) {
+  const provided = req.headers['x-api-key'] ?? (req.headers['authorization'] as string | undefined)?.replace('Bearer ', '');
+  if (!process.env.KNOWLEDGE_API_KEY || provided !== process.env.KNOWLEDGE_API_KEY) {
+    res.status(401).json({ error: 'Unauthorized — set x-api-key header' });
+    return;
+  }
+  next();
+}
+
+// POST /api/knowledge/:tenantId/setup — create or reconfigure an assistant
+app.post('/api/knowledge/:tenantId/setup', requireKnowledgeApiKey, async (req: Request, res: Response) => {
+  try {
+    const tenantId = String(req.params['tenantId']);
+    const { instructions } = req.body as { instructions?: string };
+    await getOrCreateAssistant(tenantId, instructions);
+    res.json({ ok: true, tenantId });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// POST /api/knowledge/:tenantId/files — upload a PDF, image, or CSV
+app.post('/api/knowledge/:tenantId/files', requireKnowledgeApiKey, upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = String(req.params['tenantId']);
+    if (!req.file) {
+      res.status(400).json({ error: 'No file provided — send multipart/form-data with field name "file"' });
+      return;
+    }
+    const result = await uploadFile(tenantId, req.file.buffer, req.file.originalname, req.file.mimetype);
+    res.json({ ok: true, file: result });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /api/knowledge/:tenantId/files — list uploaded files
+app.get('/api/knowledge/:tenantId/files', requireKnowledgeApiKey, async (req: Request, res: Response) => {
+  try {
+    const files = await listFiles(String(req.params['tenantId']));
+    res.json({ files });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// DELETE /api/knowledge/:tenantId/files/:fileId — remove a file
+app.delete('/api/knowledge/:tenantId/files/:fileId', requireKnowledgeApiKey, async (req: Request, res: Response) => {
+  try {
+    await deleteFile(String(req.params['tenantId']), String(req.params['fileId']));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -52,13 +117,19 @@ app.post(
     // Share contact card on first message or every N messages
     const shouldShareContact = count === 1 || count % CONTACT_CARD_INTERVAL === 0;
 
-    // Mark as read, start typing, get chat info, and fetch user profile in parallel
-    const parallelTasks: Promise<unknown>[] = [markAsRead(chatId), startTyping(chatId), getChat(chatId), getUserProfile(from)];
+    // Mark as read, start typing, get chat info, fetch user profile, and query KB — all in parallel
+    const parallelTasks: Promise<unknown>[] = [
+      markAsRead(chatId),
+      startTyping(chatId),
+      getChat(chatId),
+      getUserProfile(from),
+      queryKnowledgeBase(TENANT_ID, text),
+    ];
     if (shouldShareContact) {
       console.log(`[main] Sharing contact card (message #${count})`);
       parallelTasks.push(shareContactCard(chatId));
     }
-    const [, , chatInfo, senderProfile] = await Promise.all(parallelTasks) as [void, void, Awaited<ReturnType<typeof getChat>>, Awaited<ReturnType<typeof getUserProfile>>];
+    const [, , chatInfo, senderProfile, ragContext] = await Promise.all(parallelTasks) as [void, void, Awaited<ReturnType<typeof getChat>>, Awaited<ReturnType<typeof getUserProfile>>, string | null];
     console.log(`[timing] markAsRead+startTyping+getChat+getProfile${shouldShareContact ? '+shareContact' : ''}: ${Date.now() - start}ms`);
     if (senderProfile?.name) {
       console.log(`[main] Known user: ${senderProfile.name} (${senderProfile.facts.length} facts)`);
@@ -108,7 +179,7 @@ app.post(
       senderHandle: from,
       senderProfile,
       service,
-    });
+    }, ragContext ?? undefined);
     console.log(`[timing] claude: ${Date.now() - start}ms`);
     console.log(`[debug] responseText: ${responseText ? `"${responseText.substring(0, 50)}..."` : 'null'}, effect: ${effect ? JSON.stringify(effect) : 'null'}, renameChat: ${renameChat || 'null'}, generatedImage: ${generatedImage ? 'yes' : 'null'}, removeMember: ${removeMember || 'null'}`);
 
@@ -236,13 +307,19 @@ app.post(
 app.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════╗
-║         Linq Blue <-> Claude Bridge                   ║
+║         Linq Blue <-> Claude Bridge (Randi)           ║
 ╠═══════════════════════════════════════════════════════╣
 ║  Server running on http://localhost:${PORT}              ║
 ║                                                       ║
 ║  Endpoints:                                           ║
-║    POST /webhook  - Linq Blue webhook receiver        ║
-║    GET  /health   - Health check                      ║
+║    POST /webhook                  Linq Blue webhook   ║
+║    GET  /health                   Health check        ║
+║    POST /api/knowledge/:id/setup  Create KB assistant ║
+║    POST /api/knowledge/:id/files  Upload file         ║
+║    GET  /api/knowledge/:id/files  List files          ║
+║    DELETE /api/knowledge/:id/files/:fid  Delete file  ║
+║                                                       ║
+║  Tenant ID (this deployment): ${TENANT_ID.padEnd(22)} ║
 ║                                                       ║
 ║  Next steps:                                          ║
 ║    1. Run: ngrok http ${PORT}                            ║

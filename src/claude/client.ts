@@ -129,8 +129,12 @@ Available effects (only use when requested):
 
 DEFAULT BEHAVIOR: Just write a text response. Only add an effect if explicitly asked.`;
 
-function buildSystemPrompt(chatContext?: ChatContext): string {
+function buildSystemPrompt(chatContext?: ChatContext, ragContext?: string): string {
   let prompt = SYSTEM_PROMPT;
+
+  if (ragContext) {
+    prompt += `\n\n## Knowledge Base Context\nThe following was retrieved from the knowledge base and is directly relevant to this conversation. Use it to answer accurately:\n\n${ragContext}`;
+  }
 
   // Add user profile info if available
   if (chatContext?.senderHandle) {
@@ -455,7 +459,7 @@ function formatHistoryForClaude(messages: StoredMessage[], isGroupChat: boolean)
   });
 }
 
-export async function chat(chatId: string, userMessage: string, images: ImageInput[] = [], audio: AudioInput[] = [], chatContext?: ChatContext): Promise<ChatResponse> {
+export async function chat(chatId: string, userMessage: string, images: ImageInput[] = [], audio: AudioInput[] = [], chatContext?: ChatContext, ragContext?: string): Promise<ChatResponse> {
   const emptyResponse = {
     reaction: null,
     effect: null,
@@ -574,7 +578,7 @@ export async function chat(chatId: string, userMessage: string, images: ImageInp
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
-      system: buildSystemPrompt(chatContext),
+      system: buildSystemPrompt(chatContext, ragContext),
       tools,
       messages: [...formattedHistory, { role: 'user', content: messageContent }],
     });
