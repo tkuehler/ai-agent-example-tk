@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
 import multer from 'multer';
 import { createWebhookHandler } from './webhook/handler.js';
 import { sendMessage, markAsRead, startTyping, sendReaction, shareContactCard, getChat, renameGroupChat, setGroupChatIcon, removeParticipant } from './linq/client.js';
@@ -35,6 +36,22 @@ const CONTACT_CARD_INTERVAL = 5; // Share every N messages
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// CORS — allow hey-randi.com admin panel to call the knowledge base endpoints
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? 'https://hey-randi.com')
+  .split(',')
+  .map(o => o.trim());
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, curl, Postman)
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-api-key', 'Authorization'],
+  credentials: true,
+}));
+
 // Parse JSON bodies
 app.use(express.json());
 
@@ -43,9 +60,13 @@ app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 function requireKnowledgeApiKey(req: Request, res: Response, next: NextFunction) {
+  if (!process.env.KNOWLEDGE_API_KEY) {
+    res.status(500).json({ error: 'KNOWLEDGE_API_KEY is not configured on the server' });
+    return;
+  }
   const provided = req.headers['x-api-key'] ?? (req.headers['authorization'] as string | undefined)?.replace('Bearer ', '');
-  if (!process.env.KNOWLEDGE_API_KEY || provided !== process.env.KNOWLEDGE_API_KEY) {
-    res.status(401).json({ error: 'Unauthorized — set x-api-key header' });
+  if (provided !== process.env.KNOWLEDGE_API_KEY) {
+    res.status(401).json({ error: 'Unauthorized — provide the correct x-api-key header' });
     return;
   }
   next();
