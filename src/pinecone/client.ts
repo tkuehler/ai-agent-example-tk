@@ -34,6 +34,13 @@ export async function queryKnowledge(query: string, tenantId?: string): Promise<
         },
         body: JSON.stringify({
           messages: [{ role: 'user', content: query }],
+          system_prompt:
+            'You are a technical reference assistant. ' +
+            'Answer using ONLY the section of the document most relevant to the question. ' +
+            'Extract the specific fact, spec, procedure, or value being asked about. ' +
+            'Be concise — 3 to 5 sentences maximum. ' +
+            'Do NOT include general background, full specifications tables, or unrelated sections. ' +
+            'If the document contains a URL for a datasheet or diagram, include it at the end on its own line prefixed with "Data sheet:".',
         }),
       }
     );
@@ -46,9 +53,16 @@ export async function queryKnowledge(query: string, tenantId?: string): Promise<
       return '';
     }
 
-    const data    = await res.json() as { message?: { content?: string } };
-    const content = data?.message?.content || '';
+    const data = await res.json() as { message?: { content?: string } };
+    let content = data?.message?.content || '';
     if (!content) return '';
+
+    // Hard cap — prevents full documents from flooding the context window
+    const MAX_CHARS = 1500;
+    if (content.length > MAX_CHARS) {
+      content = content.slice(0, MAX_CHARS) + '…';
+      console.log(`[pinecone] KB truncated to ${MAX_CHARS} chars`);
+    }
 
     console.log(`[pinecone] KB: ${content.length} chars for "${query.slice(0, 50)}"`);
     return content;
