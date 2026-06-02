@@ -11,3 +11,5 @@ CLAUDE.md
 
 # OpenAPI spec (get latest from https://apidocs.linqapp.com)
 linqV3api.yaml
+web/.next/
+web/node_modules/
