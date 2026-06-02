@@ -13,3 +13,5 @@ CLAUDE.md
 linqV3api.yaml
 web/.next/
 web/node_modules/
+web/next-env.d.ts
+web/tsconfig.tsbuildinfo
