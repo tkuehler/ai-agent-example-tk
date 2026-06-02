@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, DeleteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 // DynamoDB setup
 const client = new DynamoDBClient({ region: 'us-east-1' });
@@ -198,5 +198,59 @@ export async function clearUserProfile(handle: string): Promise<boolean> {
   } catch (error) {
     console.error('[conversation] Error clearing user profile:', error);
     return false;
+  }
+}
+
+// ============================================================================
+// Token Usage - per-tenant aggregated counters (no TTL, persists forever)
+// ============================================================================
+
+export interface TokenUsage {
+  tenantId: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalRequests: number;
+  firstRequest: number;
+  lastRequest: number;
+}
+
+export async function recordTokenUsage(tenantId: string, inputTokens: number, outputTokens: number): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    await docClient.send(new UpdateCommand({
+      TableName: TABLE_NAME,
+      Key: { pk: `USAGE#${tenantId}` },
+      UpdateExpression: 'SET tenantId = :tid, lastRequest = :now, firstRequest = if_not_exists(firstRequest, :now) ADD totalInputTokens :input, totalOutputTokens :output, totalRequests :one',
+      ExpressionAttributeValues: {
+        ':tid':    tenantId,
+        ':now':    now,
+        ':input':  inputTokens,
+        ':output': outputTokens,
+        ':one':    1,
+      },
+    }));
+  } catch (error) {
+    console.error('[conversation] Error recording token usage:', error);
+  }
+}
+
+export async function getTokenUsage(tenantId: string): Promise<TokenUsage | null> {
+  try {
+    const result = await docClient.send(new GetCommand({
+      TableName: TABLE_NAME,
+      Key: { pk: `USAGE#${tenantId}` },
+    }));
+    if (!result.Item) return null;
+    return {
+      tenantId:          result.Item.tenantId,
+      totalInputTokens:  result.Item.totalInputTokens  || 0,
+      totalOutputTokens: result.Item.totalOutputTokens || 0,
+      totalRequests:     result.Item.totalRequests     || 0,
+      firstRequest:      result.Item.firstRequest,
+      lastRequest:       result.Item.lastRequest,
+    };
+  } catch (error) {
+    console.error('[conversation] Error getting token usage:', error);
+    return null;
   }
 }

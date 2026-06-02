@@ -5,7 +5,11 @@ export interface MessageHandler {
   (from: string, text: string, mediaUrl: string | null): Promise<void>;
 }
 
-export function createWebhookHandler(onMessage: MessageHandler) {
+export interface AccessRequestHandler {
+  (from: string, text: string): Promise<void>;
+}
+
+export function createWebhookHandler(onMessage: MessageHandler, onAccessRequest?: AccessRequestHandler) {
   // ALLOWED_SENDERS: comma-separated list of numbers to respond to (dev mode gate)
   const allowedSenders = process.env.ALLOWED_SENDERS
     ?.split(',').map(s => s.trim()).filter(Boolean) || [];
@@ -38,6 +42,9 @@ export function createWebhookHandler(onMessage: MessageHandler) {
     }
     if (allowedSenders.length > 0 && !allowedSenders.includes(msg.from)) {
       console.log(`[webhook] Skipping ${msg.from} (not in ALLOWED_SENDERS)`);
+      if (onAccessRequest) {
+        onAccessRequest(msg.from, msg.text).catch(() => {});
+      }
       return;
     }
 
