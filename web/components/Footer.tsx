@@ -30,6 +30,14 @@ export default function Footer() {
                   Warranty Intake
                 </Link>
               </li>
+              <li>
+                <Link
+                  href="/training"
+                  className="font-sans text-cream/50 text-sm hover:text-cream transition-colors"
+                >
+                  Training
+                </Link>
+              </li>
             </ul>
           </div>
           <div>

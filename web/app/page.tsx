@@ -21,6 +21,12 @@ const CAPABILITIES = [
     title: 'Clean claims in. Less triage out.',
     body: 'Randi captures symptom, serial, and photo over text, validates coverage, and hands your team a pre-filled claim.',
   },
+  {
+    href: '/training',
+    label: 'TRAINING',
+    title: 'Certs your techs will actually complete.',
+    body: 'Randi delivers training modules over text. Tech gets a message, answers questions, gets certified. No LMS login. No scheduled class.',
+  },
 ]
 
 export default function HomePage() {
@@ -63,7 +69,7 @@ export default function HomePage() {
       <section className="bg-cream py-20 px-6">
         <div className="max-w-4xl mx-auto">
           <p className="font-display text-sm text-gold tracking-widest mb-10">CAPABILITIES</p>
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid md:grid-cols-3 gap-6">
             {CAPABILITIES.map((f) => (
               <Link
                 key={f.href}
