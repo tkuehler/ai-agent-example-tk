@@ -52,8 +52,8 @@ export default function Header() {
               onClick={() => setDropOpen(!dropOpen)}
               aria-expanded={dropOpen}
               aria-haspopup="true"
-              className={`font-sans text-sm flex items-center gap-1.5 transition-colors focus:outline-none ${
-                isCapabilityActive ? 'text-cream' : 'text-cream/60 hover:text-cream'
+              className={`font-sans text-sm flex items-center gap-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold rounded px-1 py-0.5 ${
+                isCapabilityActive || dropOpen ? 'text-cream' : 'text-cream/70 hover:text-cream'
               }`}
             >
               Capabilities
@@ -72,7 +72,7 @@ export default function Header() {
 
             {dropOpen && (
               <div
-                className="absolute top-full right-0 mt-3 w-60 bg-navy-light border border-navy-muted shadow-2xl py-1"
+                className="absolute top-full left-0 mt-2 w-64 bg-navy-light border border-navy-muted shadow-2xl py-1 z-[100]"
                 role="menu"
               >
                 {CAPABILITIES.map(({ label, href, desc }) => (
@@ -80,18 +80,18 @@ export default function Header() {
                     key={href}
                     href={href}
                     role="menuitem"
-                    className={`block px-4 py-3 transition-colors hover:bg-navy-muted group ${
+                    className={`block px-4 py-3.5 transition-colors hover:bg-navy-muted group ${
                       path === href ? 'bg-navy-muted' : ''
                     }`}
                   >
                     <span
-                      className={`font-sans text-sm font-medium block ${
-                        path === href ? 'text-gold' : 'text-cream group-hover:text-cream'
+                      className={`font-sans text-sm font-semibold block ${
+                        path === href ? 'text-gold' : 'text-cream'
                       }`}
                     >
                       {label}
                     </span>
-                    <span className="font-sans text-xs text-cream/35 mt-0.5 block">{desc}</span>
+                    <span className="font-sans text-xs text-cream/40 mt-0.5 block">{desc}</span>
                   </Link>
                 ))}
               </div>
