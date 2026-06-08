@@ -8,6 +8,7 @@ import {
   setUserName,
   addUserFact,
   clearUserProfile,
+  recordTokenUsage,
   UserProfile,
   StoredMessage,
 } from '../state/conversation.js';
@@ -197,6 +198,9 @@ export async function chat(
     tools,
     messages:   [...formatHistory(history), { role: 'user', content: messageContent }],
   });
+
+  // Track token usage per tenant (fire-and-forget)
+  recordTokenUsage(chatId, response.usage.input_tokens, response.usage.output_tokens).catch(() => {});
 
   // Parse response blocks
   const textParts:      string[] = [];
