@@ -4,6 +4,8 @@ import { createWebhookHandler } from './webhook/handler.js';
 import { sendMessage, startTyping } from './sendblue/client.js';
 import { chat } from './claude/client.js';
 import { queryKnowledge } from './pinecone/client.js';
+import { isBlocked, recordOffTopic } from './state/blocklist.js';
+import { isOffTopic } from './moderation/offtopic.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -15,6 +17,14 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+const WARN_MESSAGES: Record<number, string> = {
+  1: "Hey — I'm Randi, a service assistant for equipment troubleshooting, parts, and warranty questions. That's outside what I can help with.\n\nIf you have a service question, I'm here for it.\n\n⚠️ Warning 1 of 3 — your number will be blocked after 3 off-topic messages.",
+  2: "Still not something I can help with. Randi is for equipment service only — troubleshooting, parts, and warranty.\n\n⚠️ Warning 2 of 3 — one more off-topic message and this number will be blocked.",
+};
+
+const BLOCK_MESSAGE =
+  "This number has been blocked. Randi is a service-only assistant for equipment troubleshooting, parts, and warranty questions.\n\nFor service help, contact your equipment dealer directly.";
+
 // Sendblue webhook
 app.post(
   '/webhook',
@@ -22,6 +32,28 @@ app.post(
     const start = Date.now();
     console.log(`[main] Message from ${from}`);
 
+    // ── Bot protection: silently drop blocked numbers ────────────────────────
+    if (await isBlocked(from)) {
+      console.log(`[main] Dropping message from blocked number ${from}`);
+      return;
+    }
+
+    // ── Off-topic / payment detection ────────────────────────────────────────
+    if (isOffTopic(text)) {
+      console.log(`[main] Off-topic message from ${from}: "${text.substring(0, 60)}"`);
+      const { count, blocked } = await recordOffTopic(from);
+
+      if (blocked) {
+        await sendMessage(from, BLOCK_MESSAGE);
+        console.log(`[main] Blocked ${from} after ${count} off-topic messages`);
+      } else {
+        const warn = WARN_MESSAGES[count] ?? WARN_MESSAGES[2];
+        await sendMessage(from, warn);
+      }
+      return;
+    }
+
+    // ── Normal flow ──────────────────────────────────────────────────────────
     // Show typing indicator while working (non-blocking, best-effort)
     startTyping(from).catch(() => {});
 
@@ -83,3 +115,4 @@ app.listen(PORT, () => {
 ╚══════════════════════════════════════════════════════╝
   `);
 });
+
